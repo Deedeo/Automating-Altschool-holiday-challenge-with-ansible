@@ -1,0 +1,295 @@
+---
+
+- name: Ansible playbook to create a VPC Network, EC2 instances, Application Load Balancer and their dependencies
+  hosts: localhost
+  connection: local
+  remote_user: AltschoolUSer
+  gather_facts: false
+  vars_files:
+    - /root/aws-vpc/vars/info.yml
+  tasks:
+   - name: create a VPC with default tenancy
+     amazon.aws.ec2_vpc_net:
+       aws_access_key: "{{ aws_id }}"
+       aws_secret_key: "{{ aws_key }}"
+       region: "{{ aws_region }}"
+       name: test_vpc_net
+       cidr_block: 192.168.0.0/16
+       tags:
+          name: ansibleVPC
+       tenancy: default
+     register: ansibleVPC
+
+   - name: AnsibleVPC
+     debug:
+       var: ansibleVPC
+
+   - name: create internet gateway for ansibleVPC
+     ec2_vpc_igw:
+       aws_access_key: "{{ aws_id }}"
+       aws_secret_key: "{{ aws_key }}"
+       region: "{{ aws_region }}"
+       state: present
+       vpc_id: "{{ ansibleVPC.vpc.id }}"
+       tags:
+          name: ansibleVPC_IGW
+     register:  ansibleVPC_igw
+
+   - name: display ansibleVPC IGW details
+     debug:
+       var: ansibleVPC_igw
+
+
+   - name: create public subnet in "{{ aws_region }}"
+     ec2_vpc_subnet: 
+        aws_access_key: "{{ aws_id }}"
+        aws_secret_key: "{{ aws_key }}"
+        region: "{{ aws_region }}"
+        az: us-east-1a
+        state: present
+        cidr: 192.168.100.0/24
+        vpc_id: "{{ ansibleVPC.vpc.id }}"
+        map_public: yes
+        tags:
+           name: public subnet
+     register: ansibleVPC_public_subnet
+
+   - name: show public subnet details
+     debug:
+        var: ansibleVPC_public_subnet
+
+   - name: create public_2 subnet in "{{ aws_region }}"
+     ec2_vpc_subnet: 
+        aws_access_key: "{{ aws_id }}"
+        aws_secret_key: "{{ aws_key }}"
+        region: "{{ aws_region }}"
+        az: us-east-1b
+        state: present
+        cidr: 192.168.200.0/24
+        vpc_id: "{{ ansibleVPC.vpc.id }}"
+        map_public: yes
+        tags:
+           name: public subnet_2
+     register: ansibleVPC_public_subnet_2
+
+   - name: show public subnet_2 details
+     debug:
+        var: ansibleVPC_public_subnet_2
+
+
+   - name: Create private subnet
+     ec2_vpc_subnet:
+      aws_access_key: "{{ aws_id }}"
+      aws_secret_key: "{{ aws_key }}"
+      state: present
+      vpc_id: "{{ ansibleVPC.vpc.id }}"
+      cidr: 192.168.50.0/24
+      az: us-east-1a
+      region: "{{ aws_region }}"
+      map_public: false
+      tags:
+        name: private_subnet
+     register: ansibleVPC_private_subnet
+
+   - name: show private subnet
+     debug:
+        var: ansibleVPC_private_subnet
+
+
+   - name: Create NAT Gateway
+     ec2_vpc_nat_gateway:
+      aws_access_key: "{{ aws_id }}"
+      aws_secret_key: "{{ aws_key }}"
+      region: "{{ aws_region }}"
+      state: present
+      if_exist_do_not_create: true
+      tags: 
+        Name: ansibleVPC_nat_gateway
+      subnet_id: "{{ ansibleVPC_public_subnet.subnet.id }}"
+      wait: yes
+      if_exist_do_not_create: true
+      release_eip:            true
+     register: ansibleVPC_nat_gateway
+
+   - name: display nat_gateway details
+     debug:
+      var: ansibleVPC_nat_gateway
+
+
+
+   - name: Set up the public subnet route table
+     ec2_vpc_route_table:
+      aws_access_key: "{{ aws_id }}"
+      aws_secret_key: "{{ aws_key }}"
+      vpc_id: "{{ ansibleVPC.vpc.id }}"
+      region: "{{ aws_region }}"
+      tags:
+       name: ansibleVPC_public_route
+      subnets: 
+         - "{{ ansibleVPC_public_subnet.subnet.id }}"
+         - "{{ ansibleVPC_public_subnet_2.subnet.id }}"
+      routes:
+        - dest: 0.0.0.0/0
+          gateway_id: "{{ ansibleVPC_igw.gateway_id }}"
+     register: ansibleVPC_public_route
+  
+   - name: display public route table
+     debug:
+      var: ansibleVPC_public_route
+  
+  
+
+   - name: Set up private subnet route table
+     ec2_vpc_route_table:
+      aws_access_key: "{{ aws_id }}"
+      aws_secret_key: "{{ aws_key }}"
+      vpc_id: "{{ ansibleVPC.vpc.id }}"
+      tags:
+        Name: ansibleVPC_private_route
+      region: "{{ aws_region }}"
+      subnets: "{{ ansibleVPC_private_subnet.subnet.id }}"
+      routes:
+       - dest: 0.0.0.0/0
+         gateway_id: "{{ ansibleVPC_nat_gateway.nat_gateway_id }}"
+     register: ansibleVPC_private_route
+  
+   - name: display private route table
+     debug:
+      var: ansibleVPC_private_route
+   
+
+   - name: Create Security Group for ALB
+     ec2_group:
+       aws_access_key: "{{ aws_id }}"
+       aws_secret_key: "{{ aws_key }}"
+       vpc_id: "{{ ansibleVPC.vpc.id }}"
+       region: "{{ aws_region }}"
+       name: "ALB SecurityGroup"
+       description: "ALB_Security_Group"
+       tags: 
+          name: ALB Security Group
+       rules:
+         - proto: "tcp"
+           ports:
+             - 80
+             - 443
+           cidr_ip: 0.0.0.0/0
+     register: load_balancer_vpc_sg
+
+   - name: Set ALB Security Group ID in variable
+     set_fact:
+      sg_id: "{{ load_balancer_vpc_sg }}"
+   
+   - name: Create Security Group for ec2
+     ec2_group:
+      aws_access_key: "{{ aws_id }}"
+      aws_secret_key: "{{ aws_key }}"
+      vpc_id: "{{ ansibleVPC.vpc.id }}"
+      region: "{{ aws_region }}"
+      name: "Ansible ec2_SecurityGroup"
+      description: "ansibleSG"
+      tags: 
+        name: Ansible Security Group
+      rules:
+       - proto: tcp
+         ports: 
+           - 22
+         cidr_ip: 0.0.0.0/0
+       - proto: tcp
+         from_port: 80
+         to_port: 80
+         group_id: "{{ load_balancer_vpc_sg.group_id }}"
+       - proto: tcp
+         from_port: 443
+         to_port: 443
+         group_id: "{{ load_balancer_vpc_sg.group_id }}"
+     register: ansible_vpc_sg
+
+   - name: Set Security Group ID in variable
+     set_fact:
+       sg_id: "{{ ansible_vpc_sg }}"
+     
+    
+   - name: gather info about amis
+     amazon.aws.ec2_ami_info:
+       aws_access_key: "{{ aws_id }}"
+       aws_secret_key: "{{ aws_key }}"
+       region: "{{ aws_region }}"
+       image_id: ami-0b5eea76982371e91
+     register: amis
+   - name: Show AMI's 
+     debug:
+       var: amis
+
+   - name: start an instance with a private IP address
+     amazon.aws.ec2:
+        aws_access_key: "{{ aws_id }}"
+        aws_secret_key: "{{ aws_key }}"
+        region: "{{ aws_region }}"
+        image: ami-0b5eea76982371e91
+        key_name: "lab-002"
+        user_data: "{{ user_data }}"
+        zone: us-east-1a
+        vpc_subnet_id: "{{ ansibleVPC_private_subnet.subnet.id }}"
+        instance_type: t2.micro
+        group_id: "{{ ansible_vpc_sg.group_id }}"
+        instance_tags:
+            Name: private_ec2
+     register: private_ec2
+   - name: Print the ec2_details
+     debug:
+        var: private_ec2
+    
+   - name: Create a target group with instance targets
+     elb_target_group:
+        name: ansibleTG
+        aws_access_key: "{{ aws_id }}"
+        aws_secret_key: "{{ aws_key }}"
+        region: "{{ aws_region }}"
+        protocol: http
+        port: 81
+        vpc_id: "{{ ansibleVPC.vpc.id }}"
+        health_check_protocol: http
+        health_check_path: /
+        successful_response_codes: "200,250-260"
+        targets:
+           - Id: "{{ private_ec2.instance_ids }}"
+             Port: 80
+        state: present
+        wait_timeout: 200
+        wait: True
+        
+        
+
+
+   - name: Create Load Balancer
+     community.aws.elb_application_lb:
+        aws_access_key: "{{ aws_id }}"
+        aws_secret_key: "{{ aws_key }}"
+        name: ansibleLB 
+        region: "{{ aws_region }}" 
+        state: present
+        security_groups:
+           - "{{ load_balancer_vpc_sg.group_id }}" 
+        subnets: 
+           - "{{ ansibleVPC_public_subnet.subnet.id }}"
+           - "{{ ansibleVPC_public_subnet_2.subnet.id }}"
+        listeners:
+           - Protocol: HTTP
+             Port: 80
+             DefaultActions:
+               - Type: forward 
+                 TargetGroupName: ansibleTG2      
+     register: ansible_load_balancer
+
+
+
+
+
+
+
+
+
+
+
+

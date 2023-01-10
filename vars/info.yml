@@ -1,0 +1,5 @@
+aws_id: # Insert your ACCESS ID key 
+aws_key: # Insert Your SECRET ACCESS Key
+aws_region: # Input AWS REGION OF YOUR CHOICE
+remote_user:  #IAM USER WITH NECESSARY PERMISION TO EC2,VPC
+user_data: "{{ lookup('file', '/root/aws-vpc/userdata.sh') }}"
