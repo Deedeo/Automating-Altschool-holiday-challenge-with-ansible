@@ -48,4 +48,4 @@
 * ````This illustrates how ansible can be used to provision Application Load Balancer attached to EC2 instance running in a private subnet which is  configured to be accessed from the internet the help of a aws service called Nat gateway.````
 
 ### Architecture Diagram
-  ![](file:///C:\Users\Daramola%20Adeola\Downloads\alt.drawio.png)
+  ![Architecture Diagram](https://github.com/Deedeo/Automating-Altschool-holiday-challenge-with-ansible/blob/master/images/alt.drawio.png)
