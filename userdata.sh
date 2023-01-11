@@ -8,8 +8,9 @@
 sudo su
 
 # install httpd (Linux 2 version)
+#!/bin/bash
 yum update -y
-yum install -y httpd.x86_64
-systemctl start httpd.service
-systemctl enable httpd.service
-echo "Hello World from $(hostname -f)" > /var/www/html/index.html
+amazon-linux-extras install nginx1.12
+systemctl start nginx
+systemctl enable nginx
+echo "<h1>Hello World from $(hostname -f)</h1>" > /usr/share/nginx/html/index.html
