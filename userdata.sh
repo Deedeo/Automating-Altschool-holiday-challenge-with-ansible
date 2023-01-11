@@ -4,8 +4,7 @@
 ##### USE THIS WITH AMAZON LINUX 2 #####
 ########################################
 
-# get admin privileges
-sudo su
+
 
 # install httpd (Linux 2 version)
 #!/bin/bash
