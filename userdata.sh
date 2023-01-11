@@ -4,10 +4,8 @@
 ##### USE THIS WITH AMAZON LINUX 2 #####
 ########################################
 
-
-
 # install httpd (Linux 2 version)
-#!/bin/bash
+
 yum update -y
 amazon-linux-extras install nginx1.12
 systemctl start nginx
